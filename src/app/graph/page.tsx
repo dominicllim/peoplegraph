@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useState } from 'react';
 import { Contact, Note } from '@/types';
 
@@ -27,7 +28,12 @@ export default function GraphPage() {
 
     return (
         <div className="min-h-screen bg-zinc-950 p-8">
-            <h1 className="text-2xl font-bold text-white mb-6">your people</h1>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold text-white">your people</h1>
+                <Link href="/" className="text-zinc-500 hover:text-zinc-300 text-sm">
+                    ← Capture
+                </Link>
+            </div>
             
             <div className="flex gap-8">
                 <div className="flex-1 h-[600px]">

@@ -21,3 +21,15 @@ export interface ParsedNote {
   tags?: string[];
   confidence: number;
 }
+
+// New types for contact matching flow
+export interface ParsedNoteResult {
+  extracted_name: string;
+  extracted_notes: string[];
+  tags?: string[];
+}
+
+export interface ContactMatch {
+  contact: Contact;
+  score: number; // 0-1 match quality
+}

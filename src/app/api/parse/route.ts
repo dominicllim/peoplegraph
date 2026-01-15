@@ -7,11 +7,7 @@ const anthropic = new Anthropic({
 
 export async function POST(request: NextRequest) {
   try {
-    const { input, existingContacts } = await request.json();
-
-    const contactList = existingContacts?.length 
-      ? `Existing contacts (sorted by recency): ${existingContacts.map((c: {name: string}) => c.name).join(', ')}`
-      : 'No existing contacts yet.';
+    const { input } = await request.json();
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -19,19 +15,15 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `You are a note parser for a personal CRM. Extract structured information from casual notes about people.
-
-${contactList}
+          content: `You are a note parser for a personal CRM. Extract the person's name and structured information from casual notes about people.
 
 Parse this input: "${input}"
 
 Respond in JSON only, no markdown:
 {
-  "contact_name": "First name (match to existing contact if likely, otherwise use the name given)",
-  "is_new_contact": true/false,
+  "extracted_name": "The person's name as mentioned in the note",
   "extracted_notes": ["Array of distinct facts/observations, each a complete thought"],
-  "tags": ["Optional tags like: career, family, travel, health, interests, plans"],
-  "confidence": 0.0-1.0 (how confident you are in the contact match)
+  "tags": ["Optional tags like: career, family, travel, health, interests, plans"]
 }
 
 If multiple people are mentioned, focus on the primary subject. Keep extracted notes concise but complete.`
