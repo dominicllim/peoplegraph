@@ -2,27 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { Contact, Note, ContactMatch } from '@/types';
+import { Contact, Note, ContactMatch, DEFAULT_TAGS, getTagColor } from '@/types';
 import { parseVCard } from '@/lib/vcard';
+import { getContacts, saveContacts } from '@/lib/storage';
 
-// Local storage helpers (we'll swap for Supabase later)
-const CONTACTS_KEY = 'peoplegraph_contacts';
 const NOTES_KEY = 'peoplegraph_notes';
-
-function getStoredContacts(): Contact[] {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(CONTACTS_KEY);
-  return stored ? JSON.parse(stored) : [];
-}
 
 function getStoredNotes(): Note[] {
   if (typeof window === 'undefined') return [];
   const stored = localStorage.getItem(NOTES_KEY);
   return stored ? JSON.parse(stored) : [];
-}
-
-function saveContacts(contacts: Contact[]) {
-  localStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
 }
 
 function saveNotes(notes: Note[]) {
@@ -66,14 +55,16 @@ export default function Home() {
     extractedName: string;
     notes: string[];
     tags?: string[];
+    suggestedTags?: string[];
     rawInput: string;
     matches: ContactMatch[];
   } | null>(null);
+  const [selectedSuggestedTags, setSelectedSuggestedTags] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setContacts(getStoredContacts());
+    setContacts(getContacts());
     setNotes(getStoredNotes());
   }, []);
 
@@ -99,12 +90,17 @@ export default function Home() {
 
       // Fuzzy match against existing contacts
       const matches = fuzzyMatch(parsed.extracted_name, contacts);
+      const suggestedTags = parsed.suggested_tags || [];
+
+      // Pre-select suggested tags
+      setSelectedSuggestedTags(suggestedTags);
 
       // Show matching UI
       setPendingNote({
         extractedName: parsed.extracted_name,
         notes: parsed.extracted_notes,
         tags: parsed.tags,
+        suggestedTags,
         rawInput: input,
         matches,
       });
@@ -122,16 +118,19 @@ export default function Home() {
     if (!pendingNote) return;
 
     const now = new Date().toISOString();
+    // Merge selected suggested tags with existing contact tags (dedupe)
+    const mergedTags = [...new Set([...contact.tags, ...selectedSuggestedTags])];
     let updatedContact: Contact;
 
     if (isNew) {
-      updatedContact = contact;
-      const newContacts = [contact, ...contacts];
+      updatedContact = { ...contact, tags: mergedTags };
+      const newContacts = [updatedContact, ...contacts];
       setContacts(newContacts);
       saveContacts(newContacts);
     } else {
       updatedContact = {
         ...contact,
+        tags: mergedTags,
         last_interaction: now,
         interaction_count: contact.interaction_count + 1,
       };
@@ -156,6 +155,7 @@ export default function Home() {
     setLastSaved({ contact: updatedContact.name, notes: pendingNote.notes });
     setInput('');
     setPendingNote(null);
+    setSelectedSuggestedTags([]);
 
     setTimeout(() => setLastSaved(null), 3000);
   };
@@ -171,9 +171,19 @@ export default function Home() {
       created_at: now,
       last_interaction: now,
       interaction_count: 1,
+      tags: [], // Will be merged with selectedSuggestedTags in saveToContact
     };
 
     saveToContact(newContact, true);
+  };
+
+  // Toggle a suggested tag selection
+  const toggleSuggestedTag = (tag: string) => {
+    setSelectedSuggestedTags(prev =>
+      prev.includes(tag)
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
   };
 
   // Handle vCard import
@@ -195,6 +205,7 @@ export default function Home() {
           created_at: now,
           last_interaction: now,
           interaction_count: 0,
+          tags: [],
         }));
 
       if (newContacts.length > 0) {
@@ -220,6 +231,21 @@ export default function Home() {
 
   const getNotesForContact = (contactId: string) => {
     return notes.filter(n => n.contact_id === contactId);
+  };
+
+  // Toggle tag on a contact
+  const toggleTag = (contact: Contact, tag: string) => {
+    const hasTag = contact.tags.includes(tag);
+    const newTags = hasTag
+      ? contact.tags.filter(t => t !== tag)
+      : [...contact.tags, tag];
+
+    const updatedContact = { ...contact, tags: newTags };
+    const newContacts = contacts.map(c => c.id === contact.id ? updatedContact : c);
+
+    setContacts(newContacts);
+    saveContacts(newContacts);
+    setSelectedContact(updatedContact);
   };
 
   const sortedContacts = [...contacts].sort(
@@ -285,6 +311,34 @@ export default function Home() {
               ))}
             </ul>
 
+            {/* Tag suggestions */}
+            {pendingNote.suggestedTags && pendingNote.suggestedTags.length > 0 && (
+              <div className="mb-4">
+                <p className="text-zinc-400 text-sm mb-2">Add tags:</p>
+                <div className="flex flex-wrap gap-2">
+                  {DEFAULT_TAGS.map((tag) => {
+                    const isSuggested = pendingNote.suggestedTags?.includes(tag);
+                    const isSelected = selectedSuggestedTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => toggleSuggestedTag(tag)}
+                        className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
+                        style={{
+                          backgroundColor: isSelected ? getTagColor(tag) : 'transparent',
+                          color: isSelected ? '#fff' : getTagColor(tag),
+                          border: `2px solid ${getTagColor(tag)}`,
+                          opacity: isSuggested || isSelected ? 1 : 0.5,
+                        }}
+                      >
+                        {tag} {isSuggested && !isSelected && '✨'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <p className="text-zinc-400 text-sm mb-2">
               {pendingNote.matches.length === 0 ? 'No matches found. Create new contact?' : 'Link to contact:'}
             </p>
@@ -311,7 +365,10 @@ export default function Home() {
             </div>
 
             <button
-              onClick={() => setPendingNote(null)}
+              onClick={() => {
+                setPendingNote(null);
+                setSelectedSuggestedTags([]);
+              }}
               className="mt-4 text-zinc-500 hover:text-zinc-300 text-sm"
             >
               Cancel
@@ -330,10 +387,31 @@ export default function Home() {
             </button>
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
               <h2 className="text-xl font-semibold mb-1">{selectedContact.name}</h2>
-              <p className="text-zinc-500 text-sm mb-6">
+              <p className="text-zinc-500 text-sm mb-4">
                 {selectedContact.interaction_count} interactions · Last: {new Date(selectedContact.last_interaction).toLocaleDateString()}
               </p>
-              
+
+              {/* Tag toggles */}
+              <div className="flex flex-wrap gap-2 mb-6">
+                {DEFAULT_TAGS.map((tag) => {
+                  const isActive = selectedContact.tags?.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => toggleTag(selectedContact, tag)}
+                      className="px-3 py-1.5 rounded-full text-sm font-medium transition-all"
+                      style={{
+                        backgroundColor: isActive ? getTagColor(tag) : 'transparent',
+                        color: isActive ? '#fff' : getTagColor(tag),
+                        border: `2px solid ${getTagColor(tag)}`,
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="space-y-4">
                 {getNotesForContact(selectedContact.id).map((note) => (
                   <div key={note.id} className="border-l-2 border-zinc-700 pl-4">
@@ -381,7 +459,21 @@ export default function Home() {
                     className="w-full text-left p-4 bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-700 transition-colors"
                   >
                     <div className="flex justify-between items-center">
-                      <span className="font-medium">{contact.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{contact.name}</span>
+                        {contact.tags?.length > 0 && (
+                          <div className="flex gap-1">
+                            {contact.tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="w-2 h-2 rounded-full"
+                                style={{ backgroundColor: getTagColor(tag) }}
+                                title={tag}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <span className="text-zinc-500 text-sm">
                         {contact.interaction_count} notes
                       </span>

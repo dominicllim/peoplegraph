@@ -23,8 +23,16 @@ Respond in JSON only, no markdown:
 {
   "extracted_name": "The person's name as mentioned in the note",
   "extracted_notes": ["Array of distinct facts/observations, each a complete thought"],
-  "tags": ["Optional tags like: career, family, travel, health, interests, plans"]
+  "tags": ["Optional topic tags like: career, family, travel, health, interests, plans"],
+  "suggested_tags": ["Relationship category suggestions from: friends, family, work"]
 }
+
+For suggested_tags, infer the relationship category based on context:
+- "friends" — social, personal hangouts, non-work activities
+- "family" — relatives, family events, family relationships
+- "work" — colleagues, professional context, office, job mentions
+
+Only include suggested_tags you're confident about. Empty array if unclear. A person can belong to multiple categories (e.g. a work friend).
 
 If multiple people are mentioned, focus on the primary subject. Keep extracted notes concise but complete.`
         }

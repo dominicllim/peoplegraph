@@ -2,9 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Contact } from '@/types';
-
-const CONTACTS_KEY = 'peoplegraph_contacts';
+import { Contact, getTagColor } from '@/types';
 
 interface GraphNode {
   id: string;
@@ -12,6 +10,9 @@ interface GraphNode {
   val: number; // node size
   isCenter?: boolean;
   color?: string;
+  // Added by react-force-graph-2d at runtime
+  x?: number;
+  y?: number;
 }
 
 interface GraphLink {
@@ -25,11 +26,15 @@ interface GraphData {
   links: GraphLink[];
 }
 
-export default function RelationshipGraph({ 
-  onNodeClick 
-}: { 
-  onNodeClick?: (contact: Contact | null) => void 
-}) {
+interface RelationshipGraphProps {
+  contacts: Contact[];
+  onNodeClick?: (contact: Contact | null) => void;
+}
+
+export default function RelationshipGraph({
+  contacts,
+  onNodeClick
+}: RelationshipGraphProps) {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,11 +55,8 @@ export default function RelationshipGraph({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Build graph data from contacts
+  // Build graph data from contacts prop
   useEffect(() => {
-    const stored = localStorage.getItem(CONTACTS_KEY);
-    const contacts: Contact[] = stored ? JSON.parse(stored) : [];
-
     // Center node (you)
     const centerNode: GraphNode = {
       id: 'center',
@@ -64,16 +66,20 @@ export default function RelationshipGraph({
       color: '#a855f7', // purple
     };
 
-    // Contact nodes
+    // Contact nodes - color based on first tag
     const contactNodes: GraphNode[] = contacts.map((contact) => {
       // Size based on interaction count (min 5, max 15)
       const size = Math.min(15, Math.max(5, contact.interaction_count * 2));
-      
+      // Use first tag's color, or untagged gray
+      const color = contact.tags.length > 0
+        ? getTagColor(contact.tags[0])
+        : getTagColor('untagged');
+
       return {
         id: contact.id,
         name: contact.name,
         val: size,
-        color: '#3b82f6', // blue
+        color,
       };
     });
 
@@ -96,20 +102,18 @@ export default function RelationshipGraph({
       nodes: [centerNode, ...contactNodes],
       links,
     });
-  }, []);
+  }, [contacts]);
 
   const handleNodeClick = (node: GraphNode) => {
     if (node.isCenter || !onNodeClick) return;
-    
-    const stored = localStorage.getItem(CONTACTS_KEY);
-    const contacts: Contact[] = stored ? JSON.parse(stored) : [];
+
     const contact = contacts.find((c) => c.id === node.id) || null;
-    
+
     // Dispatch a custom event to force parent update
     window.dispatchEvent(new Event('resize'));
-    
+
     onNodeClick(contact);
-};
+  };
 
   return (
     <div ref={containerRef} className="w-full h-full min-h-[400px] bg-zinc-950 rounded-lg">
